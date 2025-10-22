@@ -1,0 +1,152 @@
+---
+title: "QVI Chips Purchase Behaviour Analysis"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+library(readr)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(stringr)
+library(knitr)
+```
+
+# Load Data
+
+```{r}
+# Load transaction data (Excel)
+tx <- read_excel("QVI_transaction_data.xlsx", sheet = "in")
+
+# Load customer purchase behaviour data (CSV)
+cust <- read_csv("QVI_purchase_behaviour.csv")
+
+head(tx)
+head(cust)
+```
+
+# Clean and Prepare Transaction Data
+
+```{r}
+# Convert Excel serial date to Date type if needed
+if(is.numeric(tx$DATE[1])) {
+  tx <- tx %>% mutate(DATE = as.Date(DATE, origin = "1899-12-30"))
+}
+
+# Ensure product name is character
+tx$PROD_NAME <- as.character(tx$PROD_NAME)
+
+# Filter for chips products only
+chips_tx <- tx %>% filter(str_detect(PROD_NAME, regex("CHIP", ignore_case = TRUE)))
+
+head(chips_tx)
+```
+
+# Feature Engineering
+
+```{r}
+# Extract pack size
+chips_tx <- chips_tx %>% 
+  mutate(PACK_SIZE = as.numeric(str_extract(PROD_NAME, "\\d+")))
+
+# Extract brand as first word of product name
+chips_tx <- chips_tx %>% 
+  mutate(BRAND = word(PROD_NAME, 1))
+
+head(chips_tx)
+```
+
+# Merge with Customer Data
+
+```{r}
+chips_data <- chips_tx %>% 
+  left_join(cust, by = c("LYLTY_CARD_NBR" = "LYLTY_CARD_NBR"))
+
+head(chips_data)
+```
+
+# Exploratory Analysis
+
+```{r}
+# Transactions over time
+chips_data %>% 
+  count(DATE) %>% 
+  ggplot(aes(DATE, n)) + 
+  geom_line(color = "steelblue") + 
+  labs(title = "Transactions Over Time", y = "Transactions")
+```
+
+```{r}
+# Top brands
+chips_data %>% 
+  count(BRAND, sort=TRUE) %>% 
+  top_n(10) %>%
+  ggplot(aes(reorder(BRAND, n), n)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  labs(title = "Top 10 Chip Brands", y = "Transactions", x = "Brand")
+```
+
+```{r}
+# Pack size distribution
+ggplot(chips_data, aes(PACK_SIZE)) +
+  geom_histogram(binwidth = 25, fill="skyblue", color="white") +
+  labs(title = "Distribution of Pack Sizes")
+```
+
+# Customer Analysis
+
+```{r}
+# Average spend per customer
+cust_summary <- chips_data %>%
+  group_by(LYLTY_CARD_NBR) %>%
+  summarise(total_sales = sum(TOT_SALES, na.rm=TRUE),
+            transactions = n(),
+            avg_sales = mean(TOT_SALES, na.rm=TRUE))
+
+head(cust_summary)
+```
+
+```{r}
+# Customer segment analysis
+chips_data %>%
+  count(LIFESTAGE, sort=TRUE) %>%
+  ggplot(aes(reorder(LIFESTAGE, n), n, fill=LIFESTAGE)) +
+  geom_col(show.legend=FALSE) +
+  coord_flip() +
+  labs(title="Transactions by Customer Lifestage", y="Transactions", x="Lifestage")
+```
+
+```{r}
+# Premium vs Mainstream/Other
+chips_data %>%
+  count(PREMIUM_CUSTOMER, sort=TRUE) %>%
+  ggplot(aes(PREMIUM_CUSTOMER, n, fill=PREMIUM_CUSTOMER)) +
+  geom_col(show.legend=FALSE) +
+  labs(title="Transactions by Customer Premium Segment", y="Transactions")
+```
+
+# Save Outputs
+
+```{r}
+# Save cleaned data and summary
+write_csv(chips_data, "outputs/chips_data_clean.csv")
+write_csv(cust_summary, "outputs/customer_summary.csv")
+```
+
+# Conclusion
+
+This R Markdown document:
+- Loads and cleans transaction + customer data
+- Filters for chips category
+- Engineers features like brand and pack size
+- Explores trends and customer behaviour
+- Saves outputs for further analysis
+
+You can knit this to PDF or HTML to include plots and tables.
